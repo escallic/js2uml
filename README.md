@@ -7,7 +7,7 @@ adapted from [js2uml](https://github.com/imfly/js2uml) (改编自 by [@imfly](ht
 ## Description
 js2uml has been developed using [PlantUML](https://plantuml.com), [Esprima](https://esprima.org), and [Graphviz](http://www.graphviz.org/) by [imfly](https://github.com/imfly).
 
-This repository aims to maintain the project by adding compatibility. Perl scripts are introduced for preparing the input source before it is parsed using an abstract syntax tree. Nonetheless, the scripts use regular expressions that can be turned into Esprima calls.
+This repository aims to maintain the project by adding compatibility. Perl scripts are introduced for preparing the input source before it is parsed by Esprima. Nonetheless, the scripts use regular expressions that can be observed for building abstract syntax trees.
 
 
 ## Clone Project
@@ -44,6 +44,6 @@ bin/index.js --help
 ```
 
 
-## 协议（License)
+## License
 
 MIT License

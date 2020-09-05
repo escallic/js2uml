@@ -1,7 +1,7 @@
 {
   "name": "js2uml",
   "version": "0.2.3",
-  "description": "Convert Js files to UML class diagrams",
+  "description": "JavaScript (JS) to Unified Modeling Language (UML) class diagrams",
   "bin": {
     "js2uml": "./bin/index.js"
   },
@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/imfly/js2uml.git"
+    "url": "git+https://github.com/escallic/js2uml.git"
   },
   "keywords": [
     "uml",
@@ -23,9 +23,9 @@
   "author": "imfly",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/imfly/js2uml/issues"
+    "url": "https://github.com/escallic/js2uml/issues"
   },
-  "homepage": "https://github.com/imfly/js2uml#readme",
+  "homepage": "https://github.com/escallic/js2uml#readme",
   "dependencies": {
     "bash-color": "0.0.4",
     "commander": "^2.9.0",
