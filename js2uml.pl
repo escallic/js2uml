@@ -1,13 +1,13 @@
 #!/usr/bin/perl -w
 
 # UML browser target
-my $browser_linux='x-www-browser';      #default
+my $browser_linux='x-www-browser';                         # default
 #my $browser_linux='firefox';
 #my $browser_linux='chromium-browser';
-my $browser_macos='open -a Safari';     #default
+my $browser_macos='open -a Safari';                        # default
 #my $browser_macos='open -a Firefox';
 #my $browser_macos='open -a Vivaldi';
-my $browser_win10='iexplore.exe';       #default
+my $browser_win10='iexplore.exe';                          # default
 #my $browser_win10='c:/Windows/SystemApps/Microsoft.MicrosoftEdge_8wekyb3d8bbwe/MicrosoftEdge.exe';
 #my $browser_win10='c:/Windows/Program Files/Mozilla Firefox/firefox.exe';
 my $browser_other_msg='UML output was generated at ${cwd}/${uml_dir}.';
@@ -69,10 +69,6 @@ sub wanted {
 # * nested anonymous functions -> turns into "anonymous"
 #TODO: put this into a functional language.
 sub doexec {
-
-    #if($File::Find::name eq 'modules/actions/circularize.js') {#Debug
-    #    exit;
-    #}
     
     my $buf = read_file($cwd . '/' . $File::Find::name);   # Read file into buffer.
 
@@ -83,17 +79,17 @@ sub doexec {
 
     # Remove all nested anonymous functions from buffer
     $buf =~ s/function\s*?\(.*?\).*?\{{0}/anonymous/gm;    # Replace all anonymous functions with the generic key 'anonymous'.
-    while($buf =~ /anonymous\s?\{.*/){                     # Find next occurrence of 'anonymous { '.
+    while($buf =~ /anonymous\s?\{/){                     # Find next occurrence of 'anonymous { '.
         my $tmp = $';
         $buf = $` . 'anonymous';
         $tmp =~ s/                                             # Erase the following token which begins after the l brace
-            (\n ([^\{\}])*?)*?                                     # optional lines containing neither l nor r braces
             ([^\{\}])*?                                            # optional chars that are neither l nor r braces
+            (\n ([^\{\}])*?)*?                                     # optional lines containing neither l nor r braces
             (                                                      # optional child
                 \{                                                     # l brace
                 (?0)                                                   # recursion
-                (\n ([^\}])*?)*                                        # optional lines containing no r braces
                 ([^\}])*?                                              # optional chars that are not r braces
+                (\n ([^\}])*?)*                                        # optional lines containing no r braces
             )*
             \}                                                     # r brace
         //x;                                                   # Erase everything between matching and nested braces.
