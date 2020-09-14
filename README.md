@@ -1,7 +1,7 @@
 # js2uml
 command-line tool for generating UML class diagrams from JS source
 
-Wrapper for [js2uml](https://github.com/imfly/js2uml) by [@imfly](https://github.com/imfly), Wechat: kubying. 翻译：[DeepL](https://www.deepl.com/translator#en/zh/Translation%20by%20DeepL))
+Wrapper for [js2uml](https://github.com/imfly/js2uml) by [@imfly](https://github.com/imfly), Wechat: kubying. 翻译：[DeepL](https://www.deepl.com/translator#en/zh/Translation%20by%20DeepL)
 
 
 ## Description
