@@ -7,7 +7,7 @@ Wrapper for [js2uml](https://github.com/imfly/js2uml) by [@imfly](https://github
 ## Description
 js2uml has been developed using [PlantUML](https://plantuml.com), [Esprima](https://esprima.org), and [Graphviz](http://www.graphviz.org/) by [imfly](https://github.com/imfly).
 
-This repository aims to add compatibility to the project. A Perl script is introduced for preparing the input source before it is parsed by Esprima. The script merely removes several aspects of the original utility that are incomplete. It does not specify any tests for where js2uml fails. Nonetheless, the script uses regular expressions that may be observed for building abstract syntax trees. 
+This repository aims to add compatibility to the project. A Perl script is introduced for preparing the input source before it is parsed by Esprima. The script merely removes several cases from the input for which the original utility is incomplete. It does not specify any tests for where js2uml fails. Nonetheless, the script uses regular expressions that may be observed for building abstract syntax trees. 
 
 
 ## Clone this project.
