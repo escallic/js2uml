@@ -165,6 +165,10 @@ sub makeLocalConfig{
 
     mkdir($cwd . '/' . $uml_dir);                          # Create output directory if not already there.
     
+    if (-e $filename_global . '.old'){                     # check if there is a restore file
+        rename($filename_global . '.old', $filename_global);# Restore global configuration
+    }
+
     foreach my $file ($filename_local, $filename_global){  # for each file $_
         if (-e $file) {                                    # if config file exists
             open(my $fh, '<:encoding(UTF-8)', $file);      # open file
