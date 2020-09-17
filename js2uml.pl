@@ -5,9 +5,12 @@ use strict;
 use warnings;
 use File::Find;
 use File::Copy;
-use File::Slurp;
+use File::Slurper;
 use Config;
 use Cwd;
+use utf8;
+use Encode;
+use open ':std', ':encoding(UTF-8)';
 
 # UML browser target
 my $browser_linux='x-www-browser';                         # default
@@ -20,13 +23,6 @@ my $browser_win10='iexplore.exe';                          # default
 #my $browser_win10='c:/Windows/SystemApps/Microsoft.MicrosoftEdge_8wekyb3d8bbwe/MicrosoftEdge.exe';
 #my $browser_win10='c:/Windows/Program Files/Mozilla Firefox/firefox.exe';
 my $browser_other_msg='UML output was generated at ${cwd}/${uml_dir}.';
-
-# Configuration file target
-my @cfg_keys = qw(title header footer sourceFile output author borderColor backgroundcolor);
-my $filename_local = $cwd . '/' . $uml_dir . '/' . "localconfig.js";
-my $filename_global = $cwd . '/' . $exec_path;
-$filename_global =~ s/\/index.js//;
-$filename_global = $filename_global . "/../lib/" . "config.js"; 
 
 my %vars;                                                  # Define global variable hash.
 
@@ -45,6 +41,13 @@ my @js_dir;                                                # Let source file inp
 
 my $uml_dir=$ARGV[2];                                      # Let uml diagram output directory be argument 3.
 $vars{'uml_dir'} = $uml_dir;
+
+# Configuration file target
+my @cfg_keys = qw(title header footer sourceFile output author borderColor backgroundcolor);
+my $filename_local = $cwd . '/' . $uml_dir . '/' . "localconfig.js";
+my $filename_global = $cwd . '/' . $exec_path;
+$filename_global =~ s/\/index.js//;
+$filename_global = $filename_global . "/../lib/" . "config.js"; 
 
 makeLocalConfig();                                         # Modify config if not already there.
 rename($filename_global, $filename_global . '.old') or die "$!";
@@ -74,7 +77,11 @@ sub wanted {
 #TODO: put this into a functional language.
 sub doexec {
     
-    my $buf = read_file($cwd . '/' . $File::Find::name);   # Read file into buffer.
+    if($File::Find::name eq 'modules/index.js'){
+        die;
+    }
+
+    my $buf = File::Slurper::read_text($cwd . '/' . $File::Find::name);   # Read file into buffer.
 
     $buf =~ s/^export \*.*;\n//gm;                         # Remove all export keywords from buffer.
     $buf =~ s/export //g;
@@ -99,7 +106,7 @@ sub doexec {
         //x;                                               # Erase everything between matching and nested braces.
         $buf = $buf . $tmp;
     }
-    write_file('/tmp/' . $_ . '.tmp', $buf);               # Write buffer to temp file
+    File::Slurper::write_text('/tmp/' . $_ . '.tmp', $buf);# Write buffer to temp file
 
     mkdir($cwd . '/' . $uml_dir . '/' . $File::Find::dir); # Copy directory structure into output directory.
 
@@ -215,10 +222,10 @@ sub makeLocalConfig{
     }
 
     # write keys to local config from hash
-    my $buf = read_file($filename_local);                  # read file into buffer
+    my $buf = File::Slurper::read_text($filename_local);   # read file into buffer
     foreach my $key (keys %cfg_vars ) {                    # for all keys in hash
-        $buf =~ s/\"$key\": \".*?\"/"\"$key\": \"$cfg_vars{$key}\""/g;# overwrite line with key in buffer
+        $buf =~ s/\"$key\": \".*?\"/\"$key\": \"$cfg_vars{$key}\"/g;# overwrite line with key in buffer
     }
-    write_file('/tmp/' . $_ . '.tmp', $buf);               # Write buffer to temp file
+    File::Slurper::write_text($filename_local, $buf);      # Write buffer to temp file
     print "✅ Config file saved at " . $filename_local . ".\n";
 }
