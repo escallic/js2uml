@@ -197,6 +197,7 @@ sub makeLocalConfig{
                 if(<STDIN> =~ /[nN]+/){                    # if user input is "no"
                     print '❔❔' . $key . " \= ";
                     $value = <STDIN>;                      # then get user input for value of key
+                    $value =~ s/\n//;                      # remove newlines
                 }
                 $cfg_vars{$key} = $value;                  # put key=value into the hash
 
@@ -214,7 +215,6 @@ sub makeLocalConfig{
             $cfg_vars{$_} = '';                            # fill empty key with blank value
         }
     }
-
 
     # create local config file
     if(not(-e $filename_local)){                           # if local config does not exist
