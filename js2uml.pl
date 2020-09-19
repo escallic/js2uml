@@ -1,5 +1,8 @@
 #!/usr/bin/perl -w
-# See README.md for details.
+# Load configs from lib/config.js.
+# Preprocess files in directory given by second argument.
+# Output UML class diagram(s) in format given by third argument.
+
 
 use strict;
 use warnings;
@@ -12,59 +15,62 @@ use utf8;
 use Encode;
 use open ':std', ':encoding(UTF-8)';
 
-# UML browser target
-my $browser_linux='x-www-browser';                         # default
-#my $browser_linux='firefox';
-#my $browser_linux='chromium-browser';
-my $browser_macos='open -a Safari';                        # default
-#my $browser_macos='open -a Firefox';
-#my $browser_macos='open -a Vivaldi';
-my $browser_win10='iexplore.exe';                          # default
-#my $browser_win10='c:/Windows/SystemApps/Microsoft.MicrosoftEdge_8wekyb3d8bbwe/MicrosoftEdge.exe';
-#my $browser_win10='c:/Windows/Program Files/Mozilla Firefox/firefox.exe';
-my $browser_other_msg='UML output was generated at ${cwd}/${uml_dir}.';
 
-my %vars;                                                  # Define global variable hash.
+## Definitions.
+my $debug=1;
+my $debug_stopfile='modules/index.js';
+my %vars;                                                  # global variable hash.
+my $cwd = Cwd::cwd(); $vars{'cwd'} = $cwd;                 # current working directory
+my $browser_linux='x-www-browser';                         # default target on linux
+my $browser_macos='open -a Safari';                        # default target on darwin
+my $browser_win10='iexplore.exe';                          # default target on MSWin32
+my @cfg_keys_prompted =                                    # keys for which user is to be prompted
+    qw(                                
+    combineFiles
+    title 
+    header 
+    hasLicense 
+    copyleft 
+    author 
+    timestamp 
+);
 
-my $cwd = Cwd::cwd();                                      # Let current working directory be defined.
-$vars{'cwd'} = $cwd;
 
-my $num_args = $#ARGV + 1;                                 # Let number of args be defined by environment.
-if ($num_args != 3) {
-    print "\nUsage: js2uml.pl <path/to/index.js> <source input directory> <uml output directory>\n";
+## Environment variables.
+if ($#ARGV != 2) {                                         # if num args is not 3
+    print ":(\njs2uml.pl .../index.js .../src/ .../uml/\n" # print usage
+    and die;                                               # die
 }
+my $exec_path=$ARGV[0];                                    # index.js executable path is in argument 1
+my @js_dir; $vars{'sourceFile'}=@js_dir[0]=$ARGV[1];       # source file input directory is in argument 2
+my $uml_dir=$vars{'output'}=$vars{'uml_dir'}=$ARGV[2];     # uml diagram output directory is in argument 3
 
-my $exec_path=$ARGV[0];                                    # Let index.js executable path be argument 1.
 
-my @js_dir;                                                # Let source file input directory be argument 2.
-@js_dir[0]=$ARGV[1];
+# Configuration files.
+my $filename_local = $cwd . '/' . $uml_dir . '/' .         # local configuration file
+    "localconfig.js";
+my $filename_global = $cwd . '/' . $exec_path;             # global configuration file
+$filename_global =~ s/\/index.js//;                        # remove trailing `/index.js`
+$filename_global = $filename_global . "/../lib/" .         # append `/../lib/config.js`
+    "config.js";
 
-my $uml_dir=$ARGV[2];                                      # Let uml diagram output directory be argument 3.
-$vars{'uml_dir'} = $uml_dir;
+makeLocalConfig();                                         # modify config if not already there
+rename($filename_global, $filename_global . '.old')        # try to make a backup of global config file
+    or die "$!";
+copy($filename_local, $filename_global) or die "$!";       # load the local configuration file
 
-# Configuration file target
-my @cfg_keys = qw(title header footer sourceFile output author borderColor backgroundcolor);
-my $filename_local = $cwd . '/' . $uml_dir . '/' . "localconfig.js";
-my $filename_global = $cwd . '/' . $exec_path;
-$filename_global =~ s/\/index.js//;
-$filename_global = $filename_global . "/../lib/" . "config.js"; 
+find(\&wanted, @js_dir);                                   # find wanted files in input directory
 
-makeLocalConfig();                                         # Modify config if not already there.
-rename($filename_global, $filename_global . '.old') or die "$!";
-copy($filename_local, $filename_global) or die "$!";       # Use local configuration
+rename($filename_global . '.old', $filename_global);       # restore global configuration
 
-find(\&wanted, @js_dir);                                   # Find wanted files in input directory.
-
-rename($filename_global . '.old', $filename_global);       # Restore global configuration
-
-view();                                                    # Launch browser.
+view();                                                    # call browser target
 
 exit;
 
 
 # Walk all JavaScript source files recursively.
 sub wanted {
-    /^.*\.js\z/s && # dir, _, name
+    /^.*\.js\z/s &&
     doexec();
 
 }
@@ -74,78 +80,86 @@ sub wanted {
 # * export keywords -> one word, turns into nothing
 # * import clauses -> no nesting, turns into nothing
 # * nested anonymous functions -> turns into "anonymous"
-#TODO: put this into a functional language.
 sub doexec {
     
-    if($File::Find::name eq 'modules/index.js'){
-        die;
+    # debug
+    if(defined $debug and $debug){
+        if($File::Find::name eq $debug_stopfile){
+            die;
+        }
     }
 
-    my $buf = File::Slurper::read_text($cwd . '/' . $File::Find::name);   # Read file into buffer.
+    my $buf = File::Slurper::read_text($cwd . '/' .        # read file into buffer
+     $File::Find::name);
 
-    $buf =~ s/^export \*.*;\n//gm;                         # Remove all export keywords from buffer.
-    $buf =~ s/export //g;
+    $buf =~ s/^export \*.*;\n//gm;                         # remove all export keywords from buffer
+    $buf =~ s/export //g;                                  # remove all export keywords from buffer
 
-    $buf =~ s/^import[^;]*(\n.*;{0})*(\n)*.*;//gm;         # Remove all import clauses from buffer.
+    $buf =~ s/^import[^;]*(\n.*;{0})*(\n)*.*;//gm;         # remove all import clauses from buffer
 
     # Remove all nested anonymous functions from buffer
-    $buf =~ s/function\s*?\(.*?\).*?\{{0}/anonymous/gm;    # Replace all anonymous functions with the generic key 'anonymous'.
-    while($buf =~ /anonymous\s?\{/){                       # Find next occurrence of 'anonymous { '.
+    $buf =~ s/function\s*?\(.*?\).*?\{{0}/anonymous/gm;    # replace all anonymous functions with the generic key 'anonymous'
+    while($buf =~ /anonymous\s?\{/){                       # find next occurrence of 'anonymous { '
         my $tmp = $';
         $buf = $` . 'anonymous';
-        $tmp =~ s/                                             # Erase the following token which begins after the l brace
-            ([^\{\}])*?                                            # optional chars that are neither l nor r braces
-            (\n ([^\{\}])*?)*?                                     # optional lines containing neither l nor r braces
-            (                                                      # optional child
-                \{                                                     # l brace
-                (?0)                                                   # recursion
-                ([^\}])*?                                              # optional chars that are not r braces
-                (\n ([^\}])*?)*                                        # optional lines containing no r braces
+        $tmp =~ s/                                         # Erase the following token which begins after the l brace
+            ([^\{\}])*?                                    # optional chars that are neither l nor r braces
+            (\n ([^\{\}])*?)*?                             # optional lines containing neither l nor r braces
+            (                                              # optional child
+                \{                                         # l brace
+                (?0)                                       # recursion
+                ([^\}])*?                                  # optional chars that are not r braces
+                (\n ([^\}])*?)*                            # optional lines containing no r braces
             )*
-            \}                                                     # r brace
-        //x;                                               # Erase everything between matching and nested braces.
+            \}                                             # r brace
+        //x;                                               # erase everything between matching and nested braces
         $buf = $buf . $tmp;
     }
-    File::Slurper::write_text('/tmp/' . $_ . '.tmp', $buf);# Write buffer to temp file
+    File::Slurper::write_text('/tmp/' . $_ . '.tmp', $buf);# write buffer to temp file
 
-    mkdir($cwd . '/' . $uml_dir . '/' . $File::Find::dir); # Copy directory structure into output directory.
+    mkdir($cwd . '/' . $uml_dir . '/' . $File::Find::dir); # copy directory structure into output directory
 
-    print $File::Find::name, ": ";                         # Print filename
+    print $File::Find::name, ": ";                         # print filename
 
     # Call js2uml with temp file
-    system($cwd . '/' . $exec_path . ' -s /tmp/' . $_ . '.tmp -o ' . $cwd . '/' . $uml_dir . '/' . $File::Find::name . '.png');
+    system($cwd . '/' . $exec_path . ' -s /tmp/' . $_ .
+        '.tmp -o ' . $cwd . '/' . $uml_dir . '/' . 
+        $File::Find::name . '.png');
 
-    #unlink('/tmp/' . $_ . '.tmp');                        # 7. Remove temp file.
+    #unlink('/tmp/' . $_ . '.tmp');                         # remove temp file
 }
 
 
-# Print string containing vars by "${name}
-# Precondition:
-#     Variables are defined in %vars hash.
-# Synopsis: 
-#     #!/usr/bin/perl -w
-#     use strict;
-#     my %vars;
-#     my $n = 10;
-#     $vars{n}=$n;
-#     puts('The value of n is ${n}').
-# Output:
-#     The value of n is 10.
+# Print string containing vars by "${name}". 
+# Parameters:
+#     * string with references (e.g. ${x}) to variables that are to be printed.
+# Preconditions:
+#     * Any reference tokens in the string parameter are defined in the %vars hash.
+
 sub puts{
     my $string = $_[0];
     my $token;
 
-    while ($string =~ m/\$\{.*?\}/){                       # For each token.
-        print($`);                                         # Print up to first token.
-        $token = $&;                                       # Get token.
-        $token =~ s/\$\{//;                                # Remove ${.
-        $token =~ s/\}//;                                  # Remove }.
-        print $vars{$token};                               # Print token by key.
-        $string =~ s/^.*?\}//;                             # Update string.
+    while ($string =~ m/\$\{.*?\}/){                       # for each token
+        print($`);                                         # print up to first token
+        $token = $&;                                       # get token
+        $token =~ s/\$\{//;                                # remove ${
+        $token =~ s/\}//;                                  # remove }
+        print $vars{$token};                               # print token by key
+        $string =~ s/^.*?\}//;                             # update string
     }
     print($string, "\n");
 }
 
+
+# Call the uml browser target.
+# Parameters: none
+# Preconditions:
+#     * global scalar is defined: $browser_linux 
+#     * global scalar is defined: $browser_macos 
+#     * global scalar is defined: $browser_win10
+#     * global hash is defined: %vars
+#     * global scalar is defined: $vars{'browserOtherMsg'}
 
 sub view{
     if($^O eq 'linux' && defined($browser_linux)) {            
@@ -155,81 +169,141 @@ sub view{
     } elsif($^O eq 'darwin' && defined($browser_macos)) {
         system($browser_macos . ' ' . $cwd . '/' . $uml_dir);
     } else {
-        puts($browser_other_msg);
+        puts($vars{'browserOtherMsg'});
     }
 }
 
 
+# Load configs from lib/config.js into the %vars hash.
+# Parameters: none
+# Preconditions:
+#     * global scalar is defined: $cwd
+#     * global scalar is defined: $uml_dir
+#     * global scalar is defined: $filename_global
+#     * global scalar is defined: $filename_local
+#     * global hash is defined: %vars
+#     * global array is defined: @cfg_keys_prompted
 sub makeLocalConfig{
-    my %cfg_vars;
-
-    mkdir($cwd . '/' . $uml_dir);                          # Create output directory if not already there.
+    mkdir($cwd . '/' . $uml_dir);                          # create output directory if not already there
     
     if (-e $filename_global . '.old'){                     # check if there is a restore file
-        rename($filename_global . '.old', $filename_global);# Restore global configuration
+        rename($filename_global . '.old',                  # restore global configuration
+            $filename_global);
     }
 
     foreach my $file ($filename_local, $filename_global){  # for each file $_
         if (-e $file) {                                    # if config file exists
             open(my $fh, '<:encoding(UTF-8)', $file);      # open file
             print "✅ " . $file . "\n";
-            while (my $row = <$fh>) {                      # for each row in file
+            while (my $buf = <$fh>) {                      # for each line `buf` in file
+                chomp $buf;                                # put entire line into buf
 
                 # get key
-                chomp $row;                                # put line into row
-                if(not($row =~ m/^\s*?\".*\"/)){           # if row does not fit "key"
+                my $key;
+                if($buf =~ m/^\s*?\".*?\"/) {              # if matching `"key"` found
+                    $key = $&;                             # put match into key
+                    $buf = $';                             # put remainder into buf
+                    $key =~ s/^\s*//;                      # remove leading spaces from key
+                    $key =~ s/\"//g;                       # remove quotes from key
+                } else {
+                    next;                                  # otherwise skip line
+                }
+
+                # check if key is overridden
+                if(exists($vars{$key})){                   # if key is overridden
                     next;                                  # skip line
                 }
-                $row =~ m/\s*?\".*?\"/;                    # look for key
-                my $key = $&;                              # put match into key
 
                 # get value
-                my $temp = $';                             # put post into temp
-                if(not($temp =~ m/\".*\"/g)){              # if temp does not fit "value"
-                    next;                                  # skip line
-                }
-                $temp =~ m/\".*?\"/;                       # look for value
-                my $value = $&;                            # put match into value
+                my $value;
+                if($buf =~ m/\".*?\"/) {                   # if matching `"value"` found
+                    $value = $&;                           # put match into value
+                    $buf = $';                             # put remainder into buf
+                    $value =~ s/\"//g;                     # remove quotes from value
+                } else {
+                    next;                                  # otherwise skip line
+                }                             
 
-                # clean-up
-                $key =~ s/^\s*//;                          # remove tab from key
-                $key =~ s/\"//g;                           # remove quotes from key
-                $value =~ s/\"//g;                         # remove quotes from value
+                # get value's Boolean value
+                my $bool;
+                if(defined $value and
+                    $value =~ m/[^nN]|(false)/){
+                    $bool = 1;                             # put truth value of value in bool
+                }
+               
+                # get comment
+                my $comment;
+                if($buf =~ m/\/\/\s?.*/) {                 # if matching `// comment` found
+                    $comment = $&;                         # put match into comment
+                    $comment =~ s/^\/\///;                 # remove leading // from comment
+
+                    # get word
+                    my $word;
+                    while($buf =~ m/\?\([^\)]*\)\!/) {        # while matching ` ?(L:R)! ` found
+                        
+                        $word = $&;                        # put match into word
+                        $buf = $';                         # put remainder into buf
+                        if($bool) {                        # if bool is true
+                            $word =~ s/\?\(//;             # remove leading `?(` from word
+                            $word =~ s/\:.*?\)\!//;        # remove trailing `:R)! ` from word
+                        }
+                        else {
+                            $word =~ s/\?\(.*?\://;        # remove leading `?(L:` from word
+                            $word =~ s/\)\!//;             # remove trailing `)! ` from word
+                        }
+                        
+                        if($word eq ""){                   # if word is empty string
+                            $comment =~                    # replace ` ?(L:R)! ` with space
+                            s/\s?\?\(.*\)\!\s?/ /;
+                        } else {
+                            $comment =~                    # replace `?(L:R)!` with word
+                            s/\?\(.*?\)\!/$word/;
+                        }
+                    }
+                } else {
+                    $comment = $vars{'comment'};           # replace with the generic string
+                }
 
                 # user input
-                print "❔\"" . $key . "\"\t\= \"" . $value . "\" [Y/n]? ";
-                if(<STDIN> =~ /[nN]+/){                    # if user input is "no"
-                    print '❔❔' . $key . " \= ";
-                    $value = <STDIN>;                      # then get user input for value of key
-                    $value =~ s/\n//;                      # remove newlines
+                if(grep(/^$key$/,@cfg_keys_prompted)) {    # if key is required
+                    printf '❔%-12s = %-12s %s [Y/n]? ', 
+                    $key, $value, $comment;                # ask user if value is OK
+                    if(<STDIN> =~ /[nN]+/) {               # if user input is "no"
+                        print '❔❔' . $key . " \= ";
+                        $value = <STDIN>;                  # then get user input for value of key
+                        $value =~ s/\n//;                  # remove newlines from value
+                    }
                 }
-                $cfg_vars{$key} = $value;                  # put key=value into the hash
 
+                # insert k=v into hash
+                $vars{$key} = $value;                      # put key=value into the hash
             }
             close $fh;                                     # close file
             last;                                          # do not move on to next file
         } else {
-            warn "❌ " . $file . "\n";
+            warn "❌ " . $file . "\n";                      # warn if config can't be opened
         }
     }
 
     # check for missing keys in hash
-    foreach ( @cfg_keys ) {                                # for each required config key $_
-        if(not(exists($cfg_vars{$_}))){                    # if $_ does not exist in hash
-            $cfg_vars{$_} = '';                            # fill empty key with blank value
+    foreach ( @cfg_keys_prompted ) {                       # for each required config key $_
+        if(not(exists($vars{$_}))){                        # if $_ does not exist in hash
+            $vars{$_} = '';                                # fill empty key with blank value
         }
     }
 
     # create local config file
     if(not(-e $filename_local)){                           # if local config does not exist
-        copy($filename_global,$filename_local) or die "$!";# copy from global config file
+        copy($filename_global,                             # copy from global config file
+            $filename_local) or die "$!";
     }
 
     # write keys to local config from hash
     my $buf = File::Slurper::read_text($filename_local);   # read file into buffer
-    foreach my $key (keys %cfg_vars ) {                    # for all keys in hash
-        $buf =~ s/\"$key\": \".*?\"/\"$key\": \"$cfg_vars{$key}\"/g;# overwrite line with key in buffer
+    foreach my $key (keys %vars ) {                        # for all keys in hash
+        $buf =~                                            # overwrite line with key in buffer
+        s/\"$key\": \".*?\"/\"$key\": \"$vars{$key}\"/g;
     }
-    File::Slurper::write_text($filename_local, $buf);      # Write buffer to temp file
-    print "✅ Config file saved at " . $filename_local . ".\n";
+    File::Slurper::write_text($filename_local, $buf);      # write buffer to temp file
+    print $vars{'notification'} . $filename_local . ".\n";
 }
