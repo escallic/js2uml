@@ -17,8 +17,10 @@ use open ':std', ':encoding(UTF-8)';
 
 
 ## Definitions.
-my $debug=1;
+my $debug=0;
 my $debug_stopfile='modules/index.js';
+my $output_extension = '.png';                             # file extension format for uml class diagrams
+my $default = 'js2uml.js';                                 # combined output file
 my %vars;                                                  # global variable hash.
 my $cwd = Cwd::cwd(); $vars{'cwd'} = $cwd;                 # current working directory
 my $browser_linux='x-www-browser';                         # default target on linux
@@ -59,20 +61,73 @@ rename($filename_global, $filename_global . '.old')        # try to make a backu
     or die "$!";
 copy($filename_local, $filename_global) or die "$!";       # load the local configuration file
 
-find(\&wanted, @js_dir);                                   # find wanted files in input directory
+my $fh;
+if(exists $vars{'combineFiles'} and                        # if we are combining files
+    $vars{'combineFiles'} =~ /[^nN]|(false)/){
+    unlink('/tmp/' . $default . '.tmp');                   # remove default file
+    open($fh, '>>', '/tmp/' . $default . '.tmp')           # open default file for prepending
+        or die "$!";
+    find(\&wantedCombined, @js_dir);                       # find wanted files in input directory
+    close $fh;
+    system($cwd . '/' . $exec_path . ' -s /tmp/' . 
+            $default . '.tmp -o ' . $cwd . '/' . $uml_dir .
+             '/' . $default . $output_extension);
+    view($cwd . '/' . $uml_dir . '/' . $default .          # call browser target
+        $output_extension);                               
+    if(not($debug)){
+        unlink('/tmp/' . $default . '.tmp');               # remove temp file
+    }
+} else {
+    find(\&wantedSeparate, @js_dir);
+    view($cwd . '/' . $uml_dir);                           # call browser target
+}
 
 rename($filename_global . '.old', $filename_global);       # restore global configuration
-
-view();                                                    # call browser target
 
 exit;
 
 
-# Walk all JavaScript source files recursively.
-sub wanted {
-    /^.*\.js\z/s &&
-    doexec();
+# Walk all JavaScript source files recursively and append contents to output directory tree
+# Parameters: none
+# Preconditions:
+#     * global scalar is defined: $_
+#     * global scalar is defined: $cwd
+#     * global scalar is defined: $uml_dir
+#     * global scalar is defined: $File::Find:dir
+#     * global scalar is defined: $File::Find::name
+#     * global scalar is defined: $exec_path
+#     * global scalar is defined: $output_extension
+sub wantedSeparate {
+    if(/^.*\.js\z/s){
+        my $tmp = getNext();
+        File::Slurper::write_text('/tmp/' . $_ . '.tmp',   # write buffer to temp file
+        $tmp);
+        mkdir($cwd . '/' . $uml_dir . '/' .                # copy directory structure into output directory
+        $File::Find::dir); 
 
+        print $File::Find::name, ": ";                     # print filename
+
+        # Call js2uml with temp file
+        system($cwd . '/' . $exec_path . ' -s /tmp/' . $_ .
+            '.tmp -o ' . $cwd . '/' . $uml_dir . '/' . 
+            $File::Find::name . $output_extension);
+
+        if(not($debug)){
+            unlink('/tmp/' . $_ . '.tmp');                     # remove temp file
+        }
+    }
+}
+
+
+# Walk all JavaScript source files recursively and append contents to global file handle $fh
+# Parameters: none
+# Preconditions:
+#     * global scalar is defined: $fh
+sub wantedCombined {
+    if(/^.*\.js\z/s){
+        my $tmp = getNext();
+        say $fh $tmp;
+    }
 }
 
 
@@ -80,14 +135,20 @@ sub wanted {
 # * export keywords -> one word, turns into nothing
 # * import clauses -> no nesting, turns into nothing
 # * nested anonymous functions -> turns into "anonymous"
-sub doexec {
-    
+# Parameters: none
+# Preconditions:
+#     * global scalar is defined: $cwd
+#     * global scalar is defined: $File::Find::name
+sub getNext {
     # debug
-    if(defined $debug and $debug){
-        if($File::Find::name eq $debug_stopfile){
-            die;
-        }
-    }
+    # if(defined $debug and $debug){
+    #     if($File::Find::name eq $debug_stopfile){
+    #         unlink($filename_local);                       # remove local configuration file
+    #         rename($filename_global . '.old',              # restore global configuration file
+    #             $filename_global);
+    #         die;
+    #     }
+    # }
 
     my $buf = File::Slurper::read_text($cwd . '/' .        # read file into buffer
      $File::Find::name);
@@ -115,27 +176,16 @@ sub doexec {
         //x;                                               # erase everything between matching and nested braces
         $buf = $buf . $tmp;
     }
-    File::Slurper::write_text('/tmp/' . $_ . '.tmp', $buf);# write buffer to temp file
-
-    mkdir($cwd . '/' . $uml_dir . '/' . $File::Find::dir); # copy directory structure into output directory
-
-    print $File::Find::name, ": ";                         # print filename
-
-    # Call js2uml with temp file
-    system($cwd . '/' . $exec_path . ' -s /tmp/' . $_ .
-        '.tmp -o ' . $cwd . '/' . $uml_dir . '/' . 
-        $File::Find::name . '.png');
-
-    #unlink('/tmp/' . $_ . '.tmp');                         # remove temp file
+    return $buf;
 }
 
 
 # Print string containing vars by "${name}". 
 # Parameters:
-#     * string with references (e.g. ${x}) to variables that are to be printed.
+#     * string with references (e.g. ${x}) to variables that are to be printed
 # Preconditions:
-#     * Any reference tokens in the string parameter are defined in the %vars hash.
-
+#     * global hash is defined: %vars
+#     * any reference scalars in the scalar string parameter are defined in %vars
 sub puts{
     my $string = $_[0];
     my $token;
@@ -153,21 +203,21 @@ sub puts{
 
 
 # Call the uml browser target.
-# Parameters: none
+# Parameters:
+#     * scalar string: file or folder to open in browser
 # Preconditions:
 #     * global scalar is defined: $browser_linux 
 #     * global scalar is defined: $browser_macos 
 #     * global scalar is defined: $browser_win10
 #     * global hash is defined: %vars
 #     * global scalar is defined: $vars{'browserOtherMsg'}
-
 sub view{
     if($^O eq 'linux' && defined($browser_linux)) {            
-        system($browser_linux . ' ' . $cwd . '/' . $uml_dir);  
+        system($browser_linux . ' ' . $_[0]);  
     } elsif($^O eq 'MSWin32' && defined($browser_win10)) {
-        system($browser_win10 . ' ' . $cwd . '/' . $uml_dir);
+        system($browser_win10 . ' ' . $_[0]);
     } elsif($^O eq 'darwin' && defined($browser_macos)) {
-        system($browser_macos . ' ' . $cwd . '/' . $uml_dir);
+        system($browser_macos . ' ' . $_[0]);
     } else {
         puts($vars{'browserOtherMsg'});
     }
