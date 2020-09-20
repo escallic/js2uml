@@ -14,10 +14,13 @@ use Cwd;
 use utf8;
 use Encode;
 use open ':std', ':encoding(UTF-8)';
+use Term::ANSIColor;
 
 
 ## Definitions.
-my $debug=0;
+my $debug=1;
+my $colwidth=30;                                           # terminal column size
+my $num_cols=3;
 my $debug_stopfile='modules/index.js';
 my $output_extension = '.png';                             # file extension format for uml class diagrams
 my $default = 'js2uml.js';                                 # combined output file
@@ -62,6 +65,9 @@ rename($filename_global, $filename_global . '.old')        # try to make a backu
 copy($filename_local, $filename_global) or die "$!";       # load the local configuration file
 
 my $fh;
+my $i=0;
+my $lastDir=$cwd;
+my $newlineCount=0;
 if(exists $vars{'combineFiles'} and                        # if we are combining files
     $vars{'combineFiles'} =~ /[^nN]|(false)/){
     unlink('/tmp/' . $default . '.tmp');                   # remove default file
@@ -124,10 +130,42 @@ sub wantedSeparate {
 # Preconditions:
 #     * global scalar is defined: $fh
 sub wantedCombined {
+    my $tmp;
     if(/^.*\.js\z/s){
-        my $tmp = getNext();
+        $tmp = getNext();
         say $fh $tmp;
     }
+
+    if($debug){
+
+        # print file and beginning line number in combined file
+        if ($File::Find::dir ne $lastDir){
+            if($lastDir and not $lastDir =~ m/$File::Find::dir/){
+                print color('bold green');
+                printf "\n\n\.\/%s:\n", $lastDir=$File::Find::dir;
+                print color('reset');
+                $i=0;
+            } else {
+                $lastDir=$File::Find::dir;
+                #printf "\n\n\.\/%s:\n", $lastDir=$File::Find::dir;
+            }
+        } elsif (++$i % $num_cols == 0){
+            printf "\n";
+        }
+        if($_ =~/^.*\.js\z/s){
+            printf "%-d\t%-${colwidth}s", $newlineCount, $_;
+        }
+
+        #count newlines in tmp
+        if(not $tmp){
+            $tmp=" ";
+        }
+        my @strings = split /\n/, $tmp;
+        foreach my $str (@strings) {
+            $newlineCount++;
+        }
+    }
+
 }
 
 
@@ -153,10 +191,13 @@ sub getNext {
     my $buf = File::Slurper::read_text($cwd . '/' .        # read file into buffer
      $File::Find::name);
 
-    $buf =~ s/^export \*.*;\n//gm;                         # remove all export keywords from buffer
-    $buf =~ s/export //g;                                  # remove all export keywords from buffer
+    $buf =~ s/export.*?;//gm;                               # remove all `export *...;` from buffer
+    $buf =~ s/export //gm;                                  # remove all export keywords from buffer
+    
 
     $buf =~ s/^import[^;]*(\n.*;{0})*(\n)*.*;//gm;         # remove all import clauses from buffer
+
+    $buf =~ s/^\{.*?\}.*?from.*?;//g;                     # remove all `{...} from ...;`
 
     # Remove all nested anonymous functions from buffer
     $buf =~ s/function\s*?\(.*?\).*?\{{0}/anonymous/gm;    # replace all anonymous functions with the generic key 'anonymous'
@@ -212,6 +253,9 @@ sub puts{
 #     * global hash is defined: %vars
 #     * global scalar is defined: $vars{'browserOtherMsg'}
 sub view{
+    if($debug){
+        return;
+    }
     if($^O eq 'linux' && defined($browser_linux)) {            
         system($browser_linux . ' ' . $_[0]);  
     } elsif($^O eq 'MSWin32' && defined($browser_win10)) {
