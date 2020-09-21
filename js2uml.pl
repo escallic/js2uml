@@ -247,6 +247,14 @@ sub getNext {
     my $buf = File::Slurper::read_text($cwd . '/' .        # read file into buffer
      $File::Find::name);
 
+    # eliminate regex collisions with JavaScript
+    whiteout($buf,'\/\*.*?(\*\/){0}(\n.*?(\*\/){0})*\*\/');# remove all multi-line comments
+    $buf =~ s/\/\/.*//g;                                   # remove all single-line comments
+    $buf =~ s/\\\'/aYWikFnOZh/g;                           # hide all escaped single-quotes
+    $buf =~ s/\'[^\']*(\n[^\']*)*.*?\'/\'mvNjNvTEKM\'/g;   # hide all single-quoted string contents
+    $buf =~ s/\\\{/1wxPmKesLi/g;                           # hide all escaped l braces
+    $buf =~ s/\\\}/A15I5oDTq7/g;                           # hide all escaped r braces
+
     $buf =~ s/export.*?;//g;                               # remove all `export *...;` from buffer
     $buf =~ s/export //g;                                  # remove all export keywords from buffer
 
@@ -258,6 +266,8 @@ sub getNext {
     $buf =~ s/function\s*?\(.*?\).*?\{{0}/anonymous/g;     # substitute `function (...)` with `anonymous`
     whiteout($buf,'anonymous {}');                         # remove all `anonymous {}`
     return $buf;
+
+    # TO-DO: restore all regex substitutions from hash, especially each single-quoted string
 }
 
 
