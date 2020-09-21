@@ -157,15 +157,71 @@ sub wantedCombined {
         }
 
         #count newlines in tmp
-        if(not $tmp){
-            $tmp=" ";
-        }
-        my @strings = split /\n/, $tmp;
-        foreach my $str (@strings) {
-            $newlineCount++;
-        }
+        $newlineCount += countLines($tmp);
     }
 
+}
+
+
+# Count number of newlines
+sub countLines {
+    my $count=0;
+    if(not $_[0]) {
+        $_[0]= " ";
+    }
+    my @strings = split /\n/, $_[0];
+    foreach my $str (@strings) {
+        $count++;
+    }
+    return $count;
+}
+
+
+# Build string with n newlines
+sub buildLines {
+    my $string = "";
+    for (my $i=$_[0]; $i > 0; $i--) {
+        $string = $string . "\n";
+    }
+    return $string;
+}
+
+
+# Substitute globally with newlines preserved
+# Replaces multi-line match with number of newlines in match
+# Parameters:
+#     * scalar string
+#     * scalar match token (recursion is supported with `{}` at the end of the string)
+sub whiteout{
+    if($_[1] =~ m/\s?\{\}$/){                              # if `{}` found at end of string in arg2, interpret this as nested recursion
+        my $token = $`;                                    # let new token be defined without `{}`
+        while($_[0] =~ /$token\s?\{/){                     # match the next `token {`
+            $_[0] = $` . $token;                           # truncate buffer at this point
+            my $tmp = $';                                  # let tmp be what follows this
+            $tmp =~                                        # remove the following nested token from tmp:
+                s/                                         # let token begin after the l brace
+                ([^\{\}])*?                                # optional chars that are neither l nor r braces
+                (\n ([^\{\}])*?)*?                         # optional lines containing neither l nor r braces
+                (                                          # optional child
+                    \{                                     # l brace
+                    (?0)                                   # recursion
+                    ([^\}])*?                              # optional chars that are not r braces
+                    (\n ([^\}])*?)*                        # optional lines containing no r braces
+                )*
+                \}                                         # r brace
+            //x;
+            $_[0] = $_[0] . $tmp;                          # append tmp to modified buffer
+            my $newlines = buildLines(countLines($&));     # build string of newlines
+            $_[0] =~ m/\n/m;
+            $_[0] = $` . $newlines . $'; # insert newlines at the end
+        }
+    } else {                                               # otherwise perform replacement without further interpretation of arg2
+        while($_[0] =~ s/$_[1]//m){                        # remove next match
+            my $newlines = buildLines(countLines($&));     # build string of newlines
+            $_[0] =~ m/\n/;
+            $_[0] = $` . $newlines . $'; # insert newlines at the end
+        }
+    }
 }
 
 
@@ -181,8 +237,8 @@ sub getNext {
     # debug
     # if(defined $debug and $debug){
     #     if($File::Find::name eq $debug_stopfile){
-    #         unlink($filename_local);                       # remove local configuration file
-    #         rename($filename_global . '.old',              # restore global configuration file
+    #         unlink($filename_local);                     # remove local configuration file
+    #         rename($filename_global . '.old',            # restore global configuration file
     #             $filename_global);
     #         die;
     #     }
@@ -191,32 +247,16 @@ sub getNext {
     my $buf = File::Slurper::read_text($cwd . '/' .        # read file into buffer
      $File::Find::name);
 
-    $buf =~ s/export.*?;//gm;                               # remove all `export *...;` from buffer
-    $buf =~ s/export //gm;                                  # remove all export keywords from buffer
-    
+    $buf =~ s/export.*?;//g;                               # remove all `export *...;` from buffer
+    $buf =~ s/export //g;                                  # remove all export keywords from buffer
 
-    $buf =~ s/^import[^;]*(\n.*;{0})*(\n)*.*;//gm;         # remove all import clauses from buffer
+    whiteout($buf,'^import[^;]*(\n.*;{0})*(\n)*.*;');      # remove all import clauses from buffer
 
-    $buf =~ s/^\{.*?\}.*?from.*?;//g;                     # remove all `{...} from ...;`
+    $buf =~ s/^\{.*?\}.*?from.*?;//g;                      # remove all `{...} from ...;`
 
     # Remove all nested anonymous functions from buffer
-    $buf =~ s/function\s*?\(.*?\).*?\{{0}/anonymous/gm;    # replace all anonymous functions with the generic key 'anonymous'
-    while($buf =~ /anonymous\s?\{/){                       # find next occurrence of 'anonymous { '
-        my $tmp = $';
-        $buf = $` . 'anonymous';
-        $tmp =~ s/                                         # Erase the following token which begins after the l brace
-            ([^\{\}])*?                                    # optional chars that are neither l nor r braces
-            (\n ([^\{\}])*?)*?                             # optional lines containing neither l nor r braces
-            (                                              # optional child
-                \{                                         # l brace
-                (?0)                                       # recursion
-                ([^\}])*?                                  # optional chars that are not r braces
-                (\n ([^\}])*?)*                            # optional lines containing no r braces
-            )*
-            \}                                             # r brace
-        //x;                                               # erase everything between matching and nested braces
-        $buf = $buf . $tmp;
-    }
+    $buf =~ s/function\s*?\(.*?\).*?\{{0}/anonymous/g;     # substitute `function (...)` with `anonymous`
+    whiteout($buf,'anonymous {}');                         # remove all `anonymous {}`
     return $buf;
 }
 
