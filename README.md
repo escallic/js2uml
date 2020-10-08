@@ -31,3 +31,6 @@ cd js2uml && npm install
 cd ../iD
 ../js2uml/js2uml.pl ../js2uml/bin/index.js modules uml
 ```
+
+## Output Image:
+![Example](https://raw.githubusercontent.com/escallic/assets/master/js2uml/js2uml.js.png "Example for the iD Editor");
