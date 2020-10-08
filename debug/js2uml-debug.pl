@@ -19,8 +19,41 @@ use Term::ANSIColor;
 use feature qw(switch);
 
 ## Definitions.
+my $debug=0;                                               # enable debugging mode (0/1)
 my $colwidth=30;                                           # terminal column size
 my $num_cols=3;                                            # columns in file listing output
+
+## Debug particular file
+my $debug_startfile;
+my $debug_stopfile;
+my $kill=0; # 400
+given(0){
+    when(1) {
+        $debug_startfile='modules/actions/reverse.js';
+        $debug_stopfile='modules/actions/restrict_turn.js';
+    }
+    when(2) {
+        $debug_startfile='modules/actions/straighten_nodes.js'; #eturn geoVecDot(a, b, o) / geoVecDot(b, b, o);
+        $debug_stopfile='modules/actions/join.js'; #8
+    }
+    when(3) {
+        $debug_startfile='modules/osm/relation.js'; #return !!(this.tags.type && this.tags.type.match(/^restriction:?/));
+        $debug_stopfile='modules/osm/index.js'; # 269
+    }
+    when(4) {
+        $debug_startfile='modules/ui/preset_icon.js'; #const l = d * 2/3;
+        $debug_stopfile='modules/ui/form_fields.js'; #79
+    }
+    when(5) {
+        $debug_startfile='modules/ui/fields/address.js';
+        $debug_stopfile='modules/ui/fields/index.js';
+    }
+    when(6) {
+        $debug_startfile='modules/core/file_fetcher.js'; # `{\n    ` and colons and commas
+        $debug_stopfile='modules/core/preferences.js';
+    }
+}
+
 
 my $output_extension = '.png';                             # file extension format for uml class diagrams
 my $tmp_extension = '';
@@ -34,12 +67,7 @@ my @cfg_keys_prompted;
 my @cfg_keys_prompted =                                    # keys for which user is to be prompted
     qw(                                
     combineFiles
-    title 
-    header 
-    hasLicense 
-    copyleft 
-    author 
-    timestamp 
+
 );
 
 ## Environment variables.
@@ -68,6 +96,12 @@ my $fh;
 my $i=0;
 my $lastDir=$cwd;
 my $newlineCount=0;
+my $debug_skip=0;
+if(defined $debug and $debug){                             # start skipping when startfile defined
+    if(defined $debug_startfile){
+        $debug_skip=1;
+    }
+}
 
 if(exists $vars{'combineFiles'} and                        # if we are combining files
     $vars{'combineFiles'} =~ /[^nN]|(false)/){
@@ -82,7 +116,9 @@ if(exists $vars{'combineFiles'} and                        # if we are combining
             $output_extension);
     view($cwd . '/' . $uml_dir . '/' . $default .          # call browser target
         $output_extension);                               
-    unlink('/tmp/' . $default . $tmp_extension);               # remove temp file
+    if(not($debug)){
+        unlink('/tmp/' . $default . $tmp_extension);               # remove temp file
+    }
 } else {
     find(\&wantedSeparate, @js_dir);
     view($cwd . '/' . $uml_dir);                           # call browser target
@@ -245,6 +281,22 @@ sub wantedSeparate {
 
     if(/^.*\.js\z/s){
 
+        #debug
+        if($debug){                                        # if debugging
+            if(defined $ debug_stopfile and                # if stopfile reached
+                $File::Find::name eq $debug_stopfile){
+                unlink($filename_local);                   # remove local configuration file
+                rename($filename_global . '.old',          # restore global configuration file
+                    $filename_global);
+                die;                                       # die
+            } elsif (defined $debug_startfile and          # otherwise if startfile reached
+                $File::Find::name eq $debug_startfile){
+                $debug_skip=0;                             # unset debug_skip
+            } elsif ($debug_skip==1) {                     # otherwise if debug_skip set
+                goto SKIP;                                 # just get the next filename
+            }
+        }
+
         my $tmp = getNext();
         File::Slurper::write_text('/tmp/' . $_ .           # write buffer to temp file
             $tmp_extension,
@@ -261,7 +313,11 @@ sub wantedSeparate {
             $uml_dir . '/' . $File::Find::name . 
             $output_extension);
 
-        unlink('/tmp/' . $_ . $tmp_extension);         # remove temp file
+        if(not($debug)){
+            unlink('/tmp/' . $_ . $tmp_extension);         # remove temp file
+        }
+
+        SKIP:
     }
 }
 
@@ -279,26 +335,30 @@ sub wantedCombined {
         say $fh $tmp;
     }
 
-    # print file and beginning line number in combined file
-    if ($File::Find::dir ne $lastDir){
-        if($lastDir and not $lastDir =~ m/$File::Find::dir/){
-            print color('yellow');
-            printf "\n\n\.\/%s:\n", $lastDir=$File::Find::dir;
-            print color('reset');
-            $i=0;
-        } else {
-            $lastDir=$File::Find::dir;
-            #printf "\n\n\.\/%s:\n", $lastDir=$File::Find::dir;
+    if($debug){
+
+        # print file and beginning line number in combined file
+        if ($File::Find::dir ne $lastDir){
+            if($lastDir and not $lastDir =~ m/$File::Find::dir/){
+                print color('yellow');
+                printf "\n\n\.\/%s:\n", $lastDir=$File::Find::dir;
+                print color('reset');
+                $i=0;
+            } else {
+                $lastDir=$File::Find::dir;
+                #printf "\n\n\.\/%s:\n", $lastDir=$File::Find::dir;
+            }
+        } elsif (++$i % $num_cols == 0){
+            printf "\n";
         }
-    } elsif (++$i % $num_cols == 0){
-        printf "\n";
-    }
-    if($_ =~/^.*\.js\z/s){
-        printf "%-d\t%-${colwidth}s", $newlineCount, $_;
+        if($_ =~/^.*\.js\z/s){
+            printf "%-d\t%-${colwidth}s", $newlineCount, $_;
+        }
+
+        #count newlines in tmp
+        $newlineCount += countLines($tmp);
     }
 
-    #count newlines in tmp
-    $newlineCount += countLines($tmp);
 }
 
 
@@ -317,10 +377,12 @@ sub getNext {
         $File::Find::name);
 
     removeCommentsAndStrings($buf);                        # avoid regex collisions
-    removeExportsAndImports($buf);
-    removeFunctions($buf);
-    fixInvocations($buf);
-    fixVariableDeclarations($buf);
+    if(not $kill){
+        removeExportsAndImports($buf);
+        removeFunctions($buf);
+        fixInvocations($buf);
+        fixVariableDeclarations($buf);
+    }
 
     return $buf;
 }
@@ -335,8 +397,8 @@ sub getNext {
 # comment // ...  $     -> deleted
 
 sub removeCommentsAndStrings {
-
-    my $x = join '|', (                                    # forward-slashed comments preceded by
+# (?<=[\&\:\?\+\-\*\/\%\=\(\[\,]\n?\s{0,12})
+    my $x = join '|', (                                     # forward-slashed comments preceded by
         '(?<=[\&\:\?\+\-\*\/\%\=\(\[\,])(?<![\d\w\]\)])',
         '(?<=[\&\:\?\+\-\*\/\%\=\(\[\,])(?<![\d\w\]\)]\s?)',
         '(?<=[\&\:\?\+\-\*\/\%\=\(\[\,]\n?)(?<![\d\w\]\)]\s?)',
@@ -366,6 +428,7 @@ sub removeCommentsAndStrings {
         while(not $last =~ m/^($x)/) {
             $x=escape($heads[++$i]);
         }
+        #print $& . "\n";
              my $pre = $`;
              my $post = $';
 
@@ -373,6 +436,13 @@ sub removeCommentsAndStrings {
         
         $_[0] = $pre . $symbs[$i] . $newlines . $post;
     }
+
+
+    # TODO: assign all matches to a randomized, 
+    # unique id and put them all in a hash.
+    # These scalars can be used to resolve constants
+    # and literals within method or class variables.
+
 
     # restore quotes in string matches
     for (my $i = 0; $i < scalar @symbs; $i++) {
@@ -423,6 +493,7 @@ sub removeExportsAndImports {
     whiteout($_[0], 'export \*(.|\n)*?;');                 # remove all `export *...;`
     whiteout($_[0], 'export {{{}}}(.|\n)*?;');             # remove all `export {}...;`
     $_[0] =~ s/export //g;                                 # remove all `export `
+    #whiteout($_[0], 'import [^;]*(\n.*?;{0})*?(\n)*?.*;'); # remove all import ...;`
     whiteout($_[0], 'import (.|\n)*?;');                   # remove all `import ...;`
 }
 
@@ -434,6 +505,9 @@ sub removeFunctions {
     $_[0] =~ s/(?<=\=\s)function\s[\w]*?\s*?\(.*?\).*?\{{0}(?=\{)/anonymous/g; # almost-anonymous -> anonymous signature
     $_[0] =~ s/function\s*?\(.*?\).*?\{{0}/anonymous/g;    # anonymous signature -> `anonymous`
     whiteout($_[0], 'anonymous{{{}}}');                   # remove (recursively) all anonymous definitions
+
+    # TO-DO: for almost-anonymous functions, put invocation after definition, retaining signature.
+    # TO-DO: for anonymous functions, assign a random word for signatures, retaining definitions.
 }
 
 
@@ -473,6 +547,7 @@ sub fixInvocations {
         \)                                     (?# r paren)
         )+
         (?!\.)
+        (?#$append)
         /$&$append/xg;                         # append token
 }
 
@@ -556,6 +631,9 @@ sub puts{
 #     * global scalar is defined: $vars{'browserOtherMsg'}
 sub view{
 
+    if($debug){
+        return;
+    }
     if($^O eq 'linux' && defined($browser_linux)) {            
         system($browser_linux . ' ' . $_[0]);  
     } elsif($^O eq 'MSWin32' && defined($browser_win10)) {
@@ -626,6 +704,7 @@ sub whiteout{
                 \}                                         # r brace
             //x;
             $newlines = buildLines(countLines($&) - 1);    # build string of newlines
+            #print $tmp;
             $tmp =~ s/^$post//;                            # remove postlude only if it occurs thereafter
             $_[0] = $_[0] . $ newlines . $tmp;             # append newlines and modifications to truncated buffer
         }
